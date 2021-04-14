@@ -79,7 +79,11 @@ fn get_dir_stats(path: &Path) -> Vec<DirEntry> {
     unsafe {
         CloseHandle(handle);
     }
-    println!("{:?}", files);
+    let nested_files: Vec<Vec<DirEntry>> = files.iter().filter(|s| s.is_dir).map(|s| get_dir_stats(&path.join(&s.name))).collect();
+    for nested in nested_files {
+        files.extend(nested);
+    }
+
     files
 }
 
