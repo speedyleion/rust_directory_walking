@@ -16,8 +16,14 @@ use winapi::um::handleapi::CloseHandle;
 use winapi::um::winbase::FILE_FLAG_BACKUP_SEMANTICS;
 use winapi::um::winnt::{
     FILE_ATTRIBUTE_DIRECTORY, FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, HANDLE, LARGE_INTEGER,
+    FILE_SHARE_WRITE, HANDLE
 };
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct DirEntry{
+    pub name: String,
+    pub is_dir: bool,
+}
 
 pub fn dir_walk(directory: &str) -> usize {
     let mut files = get_dir_stats(Path::new(directory));
@@ -25,7 +31,7 @@ pub fn dir_walk(directory: &str) -> usize {
     files.len()
 }
 
-fn get_dir_stats(path: &Path) -> Vec<String> {
+fn get_dir_stats(path: &Path) -> Vec<DirEntry> {
     let mut files = vec![];
     let handle = get_directory_handle(path);
     let mut io_block: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
@@ -59,14 +65,10 @@ fn get_dir_stats(path: &Path) -> Vec<String> {
             let file_info = &body[0];
             let name_offset = name_member_offset + offset;
             offset += file_info.NextEntryOffset as usize;
-            if file_info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0 {
-                let name = read_string(
-                    &buffer[name_offset..],
-                    file_info.FileNameLength as usize,
-                )
-                    .unwrap();
-
-                files.push(name);
+            let is_dir = file_info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == FILE_ATTRIBUTE_DIRECTORY;
+            let name = read_string(&buffer[name_offset..], file_info.FileNameLength as usize).unwrap();
+            if !(is_dir && name.starts_with(".")) {
+                files.push(DirEntry{name, is_dir});
             }
             if file_info.NextEntryOffset == 0 {
                 break;
@@ -77,6 +79,7 @@ fn get_dir_stats(path: &Path) -> Vec<String> {
     unsafe {
         CloseHandle(handle);
     }
+    println!("{:?}", files);
     files
 }
 
