@@ -18,21 +18,35 @@ use winapi::um::winnt::{
     FILE_ATTRIBUTE_DIRECTORY, FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ,
     FILE_SHARE_WRITE, HANDLE
 };
+use rayon;
+use std::sync::{Arc, Mutex};
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 struct DirEntry{
     pub name: String,
     pub is_dir: bool,
 }
 
 pub fn dir_walk(directory: &str) -> usize {
-    let mut files = get_dir_stats(Path::new(directory));
+    let mut files = get_dir_stats_threaded(Path::new(directory));
     files.sort();
     files.len()
 }
 
-fn get_dir_stats(path: &Path) -> Vec<DirEntry> {
-    let mut files = vec![];
+fn get_dir_stats_threaded(path: &Path) -> Vec<DirEntry>{
+    let files = Arc::new(Mutex::new(vec![]));
+    {
+        let thread_pool_builder = rayon::ThreadPoolBuilder::new();
+        let thread_pool = Arc::new(thread_pool_builder.build().unwrap());
+        println!("The current num threads {:?}", thread_pool.current_num_threads());
+        get_dir_stats(path, &thread_pool, &files);
+    }
+    let result = files.lock().unwrap().to_vec();
+    result
+}
+
+fn get_dir_stats(path: &Path, pool: &Arc<rayon::ThreadPool>, files: &Arc<Mutex<Vec<DirEntry>>>) {
+    let mut local_files = vec![];
     let handle = get_directory_handle(path);
     let mut io_block: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
     let io_ptr: *mut IO_STATUS_BLOCK = &mut io_block as *mut _;
@@ -68,7 +82,7 @@ fn get_dir_stats(path: &Path) -> Vec<DirEntry> {
             let is_dir = file_info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == FILE_ATTRIBUTE_DIRECTORY;
             let name = read_string(&buffer[name_offset..], file_info.FileNameLength as usize).unwrap();
             if !(is_dir && name.starts_with(".")) {
-                files.push(DirEntry{name, is_dir});
+                local_files.push(DirEntry{name, is_dir});
             }
             if file_info.NextEntryOffset == 0 {
                 break;
@@ -79,12 +93,15 @@ fn get_dir_stats(path: &Path) -> Vec<DirEntry> {
     unsafe {
         CloseHandle(handle);
     }
-    let nested_files: Vec<Vec<DirEntry>> = files.iter().filter(|s| s.is_dir).map(|s| get_dir_stats(&path.join(&s.name))).collect();
-    for nested in nested_files {
-        files.extend(nested);
-    }
 
-    files
+    let (directories, mut are_files): (Vec<DirEntry>, Vec<DirEntry>) = local_files.into_iter().partition(|s| s.is_dir);
+    for dir in directories {
+        pool.install(move || {
+            get_dir_stats(&path.join(dir.name), pool, files);
+        })
+    }
+    are_files.sort();
+    files.lock().unwrap().extend(are_files);
 }
 
 fn get_directory_handle(path: &Path) -> HANDLE {
