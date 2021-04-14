@@ -13,7 +13,7 @@ fn main() {
 
 fn run_jwalk(directory: &String) -> u32 {
     let mut count = 0;
-    for entry in WalkDir::new(directory).sort(true) {
+    for _ in WalkDir::new(directory).sort(true) {
         count += 1;
     }
     count
