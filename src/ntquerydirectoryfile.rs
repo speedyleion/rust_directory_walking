@@ -19,15 +19,15 @@ use winapi::um::winnt::{
     FILE_SHARE_WRITE, HANDLE, LARGE_INTEGER,
 };
 
-pub fn dir_walk(directory: &str) -> u32 {
-    let files = get_dir_stats(Path::new(directory));
+pub fn dir_walk(directory: &str) -> usize {
+    let mut files = get_dir_stats(Path::new(directory));
     files.sort();
     files.len()
 }
 
-fn get_dir_stats(path: &Path) -> Vector<String> {
+fn get_dir_stats(path: &Path) -> Vec<String> {
     let mut files = vec![];
-    let handle = DirectoryStat::get_directory_handle(path);
+    let handle = get_directory_handle(path);
     let mut io_block: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
     let io_ptr: *mut IO_STATUS_BLOCK = &mut io_block as *mut _;
     let mut buffer: [u8; 1000] = [0; 1000];
@@ -60,9 +60,7 @@ fn get_dir_stats(path: &Path) -> Vector<String> {
             let name_offset = name_member_offset + offset;
             offset += file_info.NextEntryOffset as usize;
             if file_info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0 {
-                let size = unsafe { *file_info.EndOfFile.QuadPart() as u32 };
-
-                let name = DirectoryStat::read_string(
+                let name = read_string(
                     &buffer[name_offset..],
                     file_info.FileNameLength as usize,
                 )
