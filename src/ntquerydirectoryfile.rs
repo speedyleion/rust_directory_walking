@@ -20,6 +20,7 @@ use winapi::um::winnt::{
 };
 use rayon;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 struct DirEntry{
@@ -28,25 +29,26 @@ struct DirEntry{
 }
 
 pub fn dir_walk(directory: &str) -> usize {
-    let mut files = get_dir_stats_threaded(Path::new(directory));
-    files.sort();
-    files.len()
+    let count  = get_dir_stats_threaded(Path::new(directory));
+    count
 }
 
-fn get_dir_stats_threaded(path: &Path) -> Vec<DirEntry>{
-    let files = Arc::new(Mutex::new(vec![]));
+fn get_dir_stats_threaded(path: &Path) -> usize {
+    let count = Arc::new(AtomicUsize::new(0));
     {
         let thread_pool_builder = rayon::ThreadPoolBuilder::new();
-        let thread_pool = Arc::new(thread_pool_builder.build().unwrap());
-        println!("The current num threads {:?}", thread_pool.current_num_threads());
-        get_dir_stats(path, &thread_pool, &files);
+        let thread_pool = thread_pool_builder.build().unwrap();
+        let scope = thread_pool.scope(|s|{
+            get_dir_stats(path, s, &Arc::clone(&count));
+        });
+
     }
-    let result = files.lock().unwrap().to_vec();
+    let result = count.load(Ordering::Relaxed);
     result
 }
 
-fn get_dir_stats(path: &Path, pool: &Arc<rayon::ThreadPool>, files: &Arc<Mutex<Vec<DirEntry>>>) {
-    let mut local_files = vec![];
+fn get_dir_stats(path: &Path, scope: &rayon::Scope, count: &Arc<AtomicUsize>) {
+    let mut files = vec![];
     let handle = get_directory_handle(path);
     let mut io_block: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
     let io_ptr: *mut IO_STATUS_BLOCK = &mut io_block as *mut _;
@@ -82,7 +84,7 @@ fn get_dir_stats(path: &Path, pool: &Arc<rayon::ThreadPool>, files: &Arc<Mutex<V
             let is_dir = file_info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == FILE_ATTRIBUTE_DIRECTORY;
             let name = read_string(&buffer[name_offset..], file_info.FileNameLength as usize).unwrap();
             if !(is_dir && name.starts_with(".")) {
-                local_files.push(DirEntry{name, is_dir});
+                files.push(DirEntry{name, is_dir});
             }
             if file_info.NextEntryOffset == 0 {
                 break;
@@ -94,14 +96,16 @@ fn get_dir_stats(path: &Path, pool: &Arc<rayon::ThreadPool>, files: &Arc<Mutex<V
         CloseHandle(handle);
     }
 
-    let (directories, mut are_files): (Vec<DirEntry>, Vec<DirEntry>) = local_files.into_iter().partition(|s| s.is_dir);
+    let (directories, mut are_files): (Vec<DirEntry>, Vec<DirEntry>) = files.into_iter().partition(|s| s.is_dir);
     for dir in directories {
-        pool.install(move || {
-            get_dir_stats(&path.join(dir.name), pool, files);
+        let dir_path = path.join(dir.name);
+        let cloned_count = Arc::clone(count);
+        scope.spawn(move |s| {
+            get_dir_stats(&dir_path, s, &cloned_count);
         })
     }
     are_files.sort();
-    files.lock().unwrap().extend(are_files);
+    count.fetch_add(are_files.len(), Ordering::Relaxed);
 }
 
 fn get_directory_handle(path: &Path) -> HANDLE {
