@@ -38,7 +38,7 @@ fn get_dir_stats_threaded(path: &Path) -> usize {
     {
         let thread_pool_builder = rayon::ThreadPoolBuilder::new();
         let thread_pool = thread_pool_builder.build().unwrap();
-        let scope = thread_pool.scope(|s|{
+        thread_pool.scope(|s|{
             get_dir_stats(path, s, &Arc::clone(&count));
         });
 
