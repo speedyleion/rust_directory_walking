@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::fs;
 
-pub fn visit_dirs_threaded(path: &Path) -> usize {
+pub fn walk_dir_threaded(path: &Path) -> usize {
     let count = Arc::new(AtomicUsize::new(0));
     {
         let thread_pool_builder = rayon::ThreadPoolBuilder::new();

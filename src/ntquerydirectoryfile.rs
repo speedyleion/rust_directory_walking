@@ -19,7 +19,7 @@ use winapi::um::winnt::{
     FILE_SHARE_WRITE, HANDLE
 };
 use rayon;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -28,12 +28,7 @@ struct DirEntry{
     pub is_dir: bool,
 }
 
-pub fn dir_walk(directory: &str) -> usize {
-    let count  = get_dir_stats_threaded(Path::new(directory));
-    count
-}
-
-fn get_dir_stats_threaded(path: &Path) -> usize {
+pub fn ntquery_walk_dir(path: &Path) -> usize {
     let count = Arc::new(AtomicUsize::new(0));
     {
         let thread_pool_builder = rayon::ThreadPoolBuilder::new();
