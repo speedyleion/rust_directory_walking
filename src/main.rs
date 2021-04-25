@@ -50,7 +50,7 @@ fn walk_dir(dir: &Path) -> usize {
         let entry = entry.unwrap();
         if entry.file_type().unwrap().is_dir() {
             let path = entry.path();
-            count += walk_dir(&path);
+            count += walk_dir(&path) + 1;
         } else {
             files.push(entry);
         }
@@ -67,7 +67,7 @@ fn walk_dir_path_is_dir(dir: &Path) -> usize {
         let entry = entry.unwrap();
         let path = entry.path();
         if path.is_dir() {
-            count += walk_dir(&path);
+            count += walk_dir(&path) + 1;
         } else {
             files.push(entry);
         }

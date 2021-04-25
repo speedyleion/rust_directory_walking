@@ -18,7 +18,6 @@ use winapi::um::winnt::{
     FILE_ATTRIBUTE_DIRECTORY, FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ,
     FILE_SHARE_WRITE, HANDLE
 };
-use rayon;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -31,15 +30,12 @@ struct DirEntry{
 pub fn ntquery_walk_dir(path: &Path) -> usize {
     let count = Arc::new(AtomicUsize::new(0));
     {
-        let thread_pool_builder = rayon::ThreadPoolBuilder::new();
-        let thread_pool = thread_pool_builder.build().unwrap();
-        thread_pool.scope(|s|{
+        rayon::scope(|s|{
             get_dir_stats(path, s, &Arc::clone(&count));
         });
 
     }
-    let result = count.load(Ordering::Relaxed);
-    result
+    count.load(Ordering::Relaxed)
 }
 
 fn get_dir_stats(path: &Path, scope: &rayon::Scope, count: &Arc<AtomicUsize>) {
@@ -78,7 +74,7 @@ fn get_dir_stats(path: &Path, scope: &rayon::Scope, count: &Arc<AtomicUsize>) {
             offset += file_info.NextEntryOffset as usize;
             let is_dir = file_info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == FILE_ATTRIBUTE_DIRECTORY;
             let name = read_string(&buffer[name_offset..], file_info.FileNameLength as usize).unwrap();
-            if !(is_dir && name.starts_with(".")) {
+            if !(is_dir && name.starts_with('.')) {
                 files.push(DirEntry{name, is_dir});
             }
             if file_info.NextEntryOffset == 0 {
@@ -100,7 +96,7 @@ fn get_dir_stats(path: &Path, scope: &rayon::Scope, count: &Arc<AtomicUsize>) {
         })
     }
     are_files.sort();
-    count.fetch_add(are_files.len(), Ordering::Relaxed);
+    count.fetch_add(are_files.len() + 1, Ordering::Relaxed);
 }
 
 fn get_directory_handle(path: &Path) -> HANDLE {

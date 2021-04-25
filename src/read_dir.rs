@@ -11,14 +11,11 @@ use std::fs;
 pub fn walk_dir_threaded(path: &Path) -> usize {
     let count = Arc::new(AtomicUsize::new(0));
     {
-        let thread_pool_builder = rayon::ThreadPoolBuilder::new();
-        let thread_pool = thread_pool_builder.build().unwrap();
-        thread_pool.scope(|s| {
+        rayon::scope(|s| {
             get_dir_stats(path, s, &Arc::clone(&count));
         });
     }
-    let result = count.load(Ordering::Relaxed);
-    result
+    count.load(Ordering::Relaxed)
 }
 
 
@@ -37,6 +34,6 @@ fn get_dir_stats(path: &Path, scope: &rayon::Scope, count: &Arc<AtomicUsize>) {
             files.push(entry);
         }
     }
-    count.fetch_add(files.len(), Ordering::Relaxed);
+    count.fetch_add(files.len() + 1, Ordering::Relaxed);
 
 }
